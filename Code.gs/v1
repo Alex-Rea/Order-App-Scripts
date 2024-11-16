@@ -1,0 +1,530 @@
+function onEdit(e) {
+  // Determine the context of the edit
+  var sheet = e.source.getActiveSheet();
+  var editedSheetName = sheet.getName();
+  var editedRangeA1Notation = e.range.getA1Notation();
+
+  // Check if the edit was on the StockTracker sheet to update inventory
+  if (editedSheetName === "StockTracker") {
+    updateInventoryBasedOnStock();
+  }
+  
+
+if (editedRangeA1Notation === 'E2' && e.value === 'TRUE') {
+  CopyCurrentSheetToSender(sheet);
+  SpreadsheetApp.flush(); // Ensure all changes are applied before continuing
+}
+
+ // Check for edits in cells E4 or E5 on any sheet
+  if (editedRangeA1Notation === 'E4' || editedRangeA1Notation === 'E5') {
+    ResetStoreCheck(sheet);
+    SpreadsheetApp.flush(); // Flush after resetting
+  }
+  
+ if (sheet.getName() === "Pull List" && (editedRangeA1Notation === 'E5' || editedRangeA1Notation === 'E6')) {
+    var e5Value = sheet.getRange('E5').getValue();
+    var e6Value = sheet.getRange('E6').getValue();
+    
+    if (e5Value === true && e6Value === true) {
+      sheet.getRange('E5:E6').setValue(false);
+      consolidateLists();
+      SpreadsheetApp.flush(); // Flush after setting values
+    }
+  }
+}
+
+ 
+
+
+
+function changeColorsBasedOnColumnB(e) {
+  var sheet = e.source.getActiveSheet();
+  var range = e.range;
+  var correspondingRow = range.getRow();
+  var cellInColumnA = sheet.getRange(correspondingRow, 1); // Column A has index 1
+  var cellInColumnD = sheet.getRange(correspondingRow, 4); // Column D has index 4
+
+  if (range.getValue() !== '') {
+    // If there's something in the column B cell, set the corresponding cell in column A to light green 3
+    cellInColumnA.setBackground('#d9ead3'); // Light green 3 color code
+    // Set the corresponding cell in column D to purple
+    cellInColumnD.setBackground('#800080'); // Purple color
+  } else {
+    // If the column B cell is cleared, revert the corresponding cells in column A and D back to no fill
+    cellInColumnA.setBackground(null); // No fill for column A
+    cellInColumnD.setBackground(null); // No fill for column D
+  }
+}
+
+// Placeholder for another action function
+// function performAnotherAction(sheet) {
+//   // Logic for another action based on an edit
+// }
+
+
+
+
+
+
+function CopyCurrentSheetToSender(sourceSheet) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var destinationSheet = ss.getSheetByName("Sender");
+  
+  if (!destinationSheet) {
+    destinationSheet = ss.insertSheet("Sender");
+  }
+
+  // Get the data and data validations from the source sheet
+  var dataRange = sourceSheet.getDataRange();
+  var data = dataRange.getValues();
+  var validations = dataRange.getDataValidations();
+  
+  // Find the next available row in the destination sheet
+  var lastRow = destinationSheet.getLastRow();
+  var nextAvailableRow = lastRow + 1;
+
+  // Ensure the destination sheet has enough rows
+  var requiredRows = nextAvailableRow + data.length - 1;
+  var currentMaxRows = destinationSheet.getMaxRows();
+  if (currentMaxRows < requiredRows) {
+    destinationSheet.insertRowsAfter(currentMaxRows, requiredRows - currentMaxRows);
+  }
+  
+  // Ensure the destination sheet has enough columns
+  var requiredColumns = data[0].length;
+  var currentMaxColumns = destinationSheet.getMaxColumns();
+  if (currentMaxColumns < requiredColumns) {
+    destinationSheet.insertColumnsAfter(currentMaxColumns, requiredColumns - currentMaxColumns);
+  }
+  
+  // Set the data starting from the next available row
+  var destinationRange = destinationSheet.getRange(nextAvailableRow, 1, data.length, data[0].length);
+  destinationRange.setValues(data);
+  
+  // Set the data validations starting from the next available row
+  destinationRange.setDataValidations(validations);
+  
+  // Reset the checkbox in E2 to FALSE (unchecked)
+  sourceSheet.getRange('E2').setValue(false);
+  SpreadsheetApp.flush(); // Ensure all pending changes are applied immediately
+}
+
+
+
+
+
+
+function updateInventoryBasedOnStock() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Tracker Sheet Info
+  var trackerSheetName = "StockTracker";
+  var trackerSheet = ss.getSheetByName(trackerSheetName);
+  if (!trackerSheet) {
+    Logger.log("Tracker sheet not found");
+    return;
+  }
+  
+  // Assuming item names start from A2, low stock in B, out of stock in C
+  var trackerRange = trackerSheet.getRange("A2:C" + trackerSheet.getLastRow());
+  var trackerValues = trackerRange.getValues();
+  
+  // Maps for item names to their stock status
+  var stockStatusMap = {};
+  trackerValues.forEach(function(row) {
+    var itemName = row[0];
+    var isLowStock = row[1]; // True if low stock
+    var isOutOfStock = row[2]; // True if out of stock
+    
+    // Determine stock status color
+    var color = 'yellow'; // Default to yellow for normal stock
+    if (isOutOfStock === true) {
+      color = 'red'; // Out of Stock
+    } else if (isLowStock === true) {
+      color = 'orange'; // Low Stock
+    }
+    stockStatusMap[itemName] = color;
+  });
+  
+  // Update other sheets based on the tracker
+  ss.getSheets().forEach(function(sheet) {
+    if (sheet.getName() !== trackerSheetName) { // Skip the tracker sheet
+      var range = sheet.getDataRange();
+      var values = range.getValues();
+      
+      for (var i = 0; i < values.length; i++) {
+        var itemName = values[i][2]; // Item names are in column C
+        if (stockStatusMap.hasOwnProperty(itemName)) {
+          var color = stockStatusMap[itemName];
+          sheet.getRange(i + 1, 2, 1, 1).setBackground(color); // Color the cell in column B
+        }
+      }
+    }
+  });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+function ResetStoreCheck(sheet) {
+  var e4Value = sheet.getRange('E4').getValue();
+  var e5Value = sheet.getRange('E5').getValue();
+  
+  // Proceed if both E4 and E5 are checked (TRUE)
+  if (e4Value === true && e5Value === true) {
+    // Reset E4 and E5 to FALSE first
+    sheet.getRange('E4').setValue(false);
+    sheet.getRange('E5').setValue(false);
+
+    // Perform the reset actions
+    ResetStore(sheet);
+  }
+}
+
+
+
+
+
+
+function ResetStore(sheet) {
+  var lastRow = sheet.getLastRow(); // Determine the last row with content
+
+  // Clear content in row B starting below row 3
+  if (lastRow > 1) {
+    sheet.getRange("B4:B" + lastRow).clearContent();
+  }
+
+  // Reset checkboxes in row A starting from row 3
+  for (var i = 3; i <= lastRow; i++) {
+    sheet.getRange('A' + i).setValue(false); // Assuming A2:A[lastRow] are checkboxes
+  sheet.getRange('D' + i).setValue(false); // Uncheck checkboxes in column D
+  }
+}
+
+
+
+
+
+
+
+
+
+function changeColorsBasedOnColumnB(e) {
+  var sheet = e.source.getActiveSheet();
+  var range = e.range;
+  var correspondingRow = range.getRow();
+  var cellInColumnA = sheet.getRange(correspondingRow, 1); // Column A has index 1
+  var cellInColumnD = sheet.getRange(correspondingRow, 4); // Column D has index 4
+
+  if (range.getValue() !== '') {
+    // If there's something in the column B cell, set the corresponding cell in column A to light green 3
+    cellInColumnA.setBackground('#d9ead3'); // Light green 3 color code
+    // Set the corresponding cell in column D to purple
+    cellInColumnD.setBackground('#d9ead3'); 
+  } else {
+    // If the column B cell is cleared, revert the corresponding cells in column A and D back to no fill
+    cellInColumnA.setBackground('#38761d');
+    cellInColumnD.setBackground('#38761d');
+  }
+}
+
+
+
+
+function consolidateLists() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var consolidationMap = {};
+
+  ss.getSheets().forEach(function(sheet) {
+    if (sheet.getName() !== "Pull List") {
+      var e7Value = sheet.getRange('E7').getValue();
+      var e8Value = sheet.getRange('E8').getValue();
+      
+      if (e7Value === true && e8Value === true) {
+        var dataRange = sheet.getRange("B2:C" + sheet.getLastRow());
+        var dataValues = dataRange.getValues();
+
+        dataValues.forEach(function(row) {
+          var quantity = row[0];
+          var itemName = row[1];
+          if (quantity && itemName) { // Ensure non-empty values
+            if (!consolidationMap[itemName]) {
+              consolidationMap[itemName] = 0;
+            }
+            consolidationMap[itemName] += quantity;
+          }
+        });
+
+        sheet.getRange('E7:E8').setValue(false);
+      }
+    }
+  });
+
+  populatePullList(consolidationMap);
+}
+
+function populatePullList(consolidationMap) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pullListSheet = ss.getSheetByName("Pull List");
+
+  // Clear existing data starting from row 2
+  pullListSheet.getRange("B2:C" + pullListSheet.getLastRow()).clearContent();
+
+  // Sort and prepare data for insertion
+  var dataForInsertion = [];
+  for (var itemName in consolidationMap) {
+    if (consolidationMap.hasOwnProperty(itemName)) {
+      dataForInsertion.push([itemName, consolidationMap[itemName]]);
+    }
+  }
+
+  // Ensure data is inserted starting at row 2, Column B for quantity and Column C for names
+  dataForInsertion.forEach(function(rowData, index) {
+    var row = index + 2; // Starting from row 2
+    pullListSheet.getRange(row, 3).setValue(rowData[0]); // Item name in column C
+    pullListSheet.getRange(row, 2).setValue(rowData[1]); // Quantity in column B
+  });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function colorCellsContaining() {
+  const searchString = "Kettle Sea Salt 1.5 oz"; // The string to search for
+  const highlightColor = "#64c2f6"; // Yellow; change this to your preferred color
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+
+  sheets.forEach(sheet => {
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+
+    values.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        if (cell.toString().includes(searchString)) { // Change to `===` for exact matches
+          sheet.getRange(rowIndex + 1, colIndex + 1).setBackground(highlightColor);
+        }
+      });
+    });
+  });
+}
+
+
+
+
+
+
+
+
+function replaceItemNameInAllSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  
+  // Prompt for the old and new item names
+  var ui = SpreadsheetApp.getUi();
+  var responseOldName = ui.prompt('Replace Item Name', 'Please enter the OLD item name:', ui.ButtonSet.OK_CANCEL);
+  
+  // Exit if the user cancels the prompt
+  if (responseOldName.getSelectedButton() !== ui.Button.OK) {
+    ui.alert('Operation cancelled.');
+    return;
+  }
+  
+  var oldItemName = responseOldName.getResponseText();
+  
+  var responseNewName = ui.prompt('Replace Item Name', 'Please enter the NEW item name:', ui.ButtonSet.OK_CANCEL);
+  
+  // Exit if the user cancels the prompt
+  if (responseNewName.getSelectedButton() !== ui.Button.OK) {
+    ui.alert('Operation cancelled.');
+    return;
+  }
+  
+  var newItemName = responseNewName.getResponseText();
+  
+  // Iterate through each sheet and cell, replacing the old item name with the new item name
+  sheets.forEach(function(sheet) {
+    var range = sheet.getDataRange();
+    var values = range.getValues();
+    
+    var replaced = false;
+    for (var i = 0; i < values.length; i++) {
+      for (var j = 0; j < values[i].length; j++) {
+        if (values[i][j] === oldItemName) {
+          values[i][j] = newItemName;
+          replaced = true;
+        }
+      }
+    }
+    
+    // Update the sheet only if replacements were made to minimize operations
+    if (replaced) {
+      range.setValues(values);
+    }
+  });
+  
+  // Notify the user of completion
+  ui.alert('Replacement Complete', 'All instances of "' + oldItemName + '" have been replaced with "' + newItemName + '" across all sheets.', ui.ButtonSet.OK);
+}
+
+
+
+
+function createSheetDirectory() {
+  // Get the active spreadsheet and the "Directory" sheet
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var directorySheet = ss.getSheetByName("Directory");
+  
+  if (!directorySheet) {
+    // If the "Directory" sheet does not exist, create it
+    directorySheet = ss.insertSheet("Directory");
+  }
+
+  // Clear any existing content in column D of the "Directory" sheet
+  directorySheet.getRange('D:D').clearContent();
+
+  // Get all sheets in the spreadsheet
+  var sheets = ss.getSheets();
+
+  // Start writing the directory from row 1 in column D
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var sheetName = sheet.getName();
+    var sheetLink = '=HYPERLINK("#gid=' + sheet.getSheetId() + '","' + sheetName + '")';
+    
+    // Write the hyperlink to the "Directory" sheet in column D
+    directorySheet.getRange(i + 1, 4).setValue(sheetLink);
+  }
+}
+
+
+
+
+
+
+
+
+
+// Main function triggered by an installable onEdit trigger
+function onInstallableEdit(e) {
+  var sheet = e.range.getSheet();
+  var editedRange = e.range;
+  var editedRangeA1Notation = editedRange.getA1Notation();
+
+  // Check if the edited cell is one of the checkboxes in A1, A2, or A3
+  if (editedRangeA1Notation === 'A1' || editedRangeA1Notation === 'A2' || editedRangeA1Notation === 'A3') {
+    // Get the user's name from cell B2
+    var editedByCell = sheet.getRange('B2');
+    var editedBy = editedByCell.getValue();
+
+    // If the user's name is empty, prompt the user to enter their name
+    if (!editedBy) {
+      SpreadsheetApp.getUi().alert('Please select your name from the dropdown in cell B2 before logging a delivery status.');
+      // Uncheck the checkbox since we cannot proceed without the user's name
+      editedRange.setValue(false);
+      return;
+    }
+
+    handleExternalDeliveryStatus(sheet, e, editedBy); // Pass the user's name to the function
+    SpreadsheetApp.flush(); // Ensure all changes are applied after handling delivery
+  }
+
+  // Moved inside the function
+  if ((editedRangeA1Notation === 'E1' || editedRangeA1Notation === 'F1') && sheet.getName() === "Sender") {
+    ClearSenderCheck(sheet);
+    SpreadsheetApp.flush(); // Flush changes to avoid triggering `onEdit`
+  }
+}
+
+// Function to log delivery status in an external Google Sheet
+function handleExternalDeliveryStatus(sheet, e, editedBy) {
+  var tabName = sheet.getName(); // Get the current tab name
+  var timestamp = new Date();
+  var status = "";
+  var color = "";
+
+  // Determine the status based on which checkbox was checked
+  if (e.range.getA1Notation() === 'A1' && e.value === 'TRUE') {
+    status = "Completed";
+    color = "#49ae5d"; // Green for completed
+  } else if (e.range.getA1Notation() === 'A2' && e.value === 'TRUE') {
+    status = "On Hold";
+    color = "#ff9900"; // Orange for on hold
+  } else if (e.range.getA1Notation() === 'A3' && e.value === 'TRUE') {
+    status = "Cancelled Delivery";
+    color = "#ff0000"; // Red for cancelled delivery
+  } else {
+    return; // Exit if no relevant checkbox was checked
+  }
+
+  // Open the external logging sheet
+  var logSheetId = '1suOzrR0GbJH60DyxbVNBdagzFZd2jlcfwNc4hvXnWCw'; // Replace with your actual logging sheet ID
+  var logSheet = SpreadsheetApp.openById(logSheetId).getSheets()[0];
+
+  // Insert the log at the top (before the first row)
+  logSheet.insertRowBefore(2); // Row 1 is the header, so insert at row 2
+  var newRow = logSheet.getRange(2, 1, 1, 4); // 4 columns to capture tab name, timestamp, user name, and status
+  newRow.setValues([[tabName, timestamp, editedBy, status]]); // Log the tab name, timestamp, user name, and status
+
+  // Apply background color based on status
+  newRow.setBackground(color);
+
+  // Uncheck the checkbox after logging
+  e.range.setValue(false);
+}
+
+function ClearSenderCheck(sheet) {
+  var e1Value = sheet.getRange('E1').getValue();
+  var f1Value = sheet.getRange('F1').getValue();
+
+  // Check if both E1 and F1 are TRUE
+  if (e1Value === true && f1Value === true) {
+    // Reset E1 and F1 to FALSE first
+    sheet.getRange('E1').setValue(false);
+    sheet.getRange('F1').setValue(false);
+
+    // Now clear the "Sender" tab except for the top two rows
+    ClearSender();
+  }
+}
+
+function ClearSender() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var senderSheet = ss.getSheetByName("Sender");
+  Logger.log('senderSheet: ' + senderSheet);
+
+  if (senderSheet) {
+    Logger.log('senderSheet is a Sheet object');
+    var maxRows = senderSheet.getMaxRows();
+
+    if (maxRows > 2) {
+      // Delete all rows from row 3 to the end
+      senderSheet.deleteRows(3, maxRows - 2);
+      Logger.log('Deleted rows from 3 to ' + maxRows);
+    } else {
+      Logger.log('No rows to delete.');
+    }
+  } else {
+    Logger.log("Sheet named 'Sender' not found.");
+  }
+}
+
