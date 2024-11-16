@@ -594,6 +594,15 @@ function generateHyperlinksForStockTracker() {
       }
     });
 
+    // Remove protection if it exists
+    const protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+    protections.forEach(protection => {
+      const range = protection.getRange();
+      if (range.getColumn() === 3 && range.getRow() >= 3) {
+        protection.remove();
+      }
+    });
+
     // Update the sheet with the hyperlinks
     sheetData.setValues(hyperlinks);
 
@@ -604,6 +613,7 @@ function generateHyperlinksForStockTracker() {
 
   Logger.log("Hyperlink generation and formatting complete.");
 }
+
 
 
 
